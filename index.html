@@ -104,6 +104,19 @@
   /* ---- admin panel ---- */
   #adminSection{display:none;}
   #adminSection.show{display:block;}
+  .pw-modal{
+    display:none;position:fixed;inset:0;background:rgba(15,59,71,0.55);z-index:100;
+    align-items:center;justify-content:center;padding:20px;
+  }
+  .pw-box{
+    background:var(--panel);border-radius:var(--radius);padding:26px 28px;width:100%;max-width:340px;
+    box-shadow:0 20px 50px rgba(0,0,0,0.25);
+  }
+  .pw-box h3{font-family:var(--serif);font-size:17px;color:var(--navy);margin:0 0 14px;}
+  .pw-box input{width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--line);font-family:var(--sans);font-size:14px;background:#fbfaf5;margin-bottom:12px;}
+  .pw-box input:focus{outline:2px solid var(--teal);outline-offset:1px;}
+  .pw-actions{display:flex;gap:8px;}
+  .pw-error{color:var(--coral);font-size:12.5px;font-weight:600;margin-top:10px;display:none;}
   .admin-banner{background:var(--navy);color:#fff;border-radius:var(--radius);padding:16px 20px;margin-bottom:22px;font-size:13px;line-height:1.6;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center;}
   .admin-banner b{color:var(--gold-soft);}
   .admin-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px;}
@@ -152,6 +165,18 @@
 </head>
 <body>
 
+<div class="pw-modal" id="pwModal">
+  <div class="pw-box">
+    <h3>ใส่รหัสผ่านผู้ดูแล</h3>
+    <input type="password" id="pwInput" placeholder="รหัสผ่าน" autocomplete="off">
+    <div class="pw-actions">
+      <button class="btn-primary" id="pwSubmit" type="button">เข้าสู่โหมดผู้ดูแล</button>
+      <button class="btn-ghost" id="pwCancel" type="button">ยกเลิก</button>
+    </div>
+    <div class="pw-error" id="pwError">รหัสผ่านไม่ถูกต้อง</div>
+  </div>
+</div>
+
 <header class="topnav">
   <div class="wrap">
     <div class="brand"><span class="mark">RD</span> Research Publications Dashboard</div>
@@ -182,7 +207,7 @@
   <div class="wrap">
     <div id="adminSection">
       <div class="admin-banner">
-        <div>โหมดผู้ดูแล — เพิ่ม แก้ไข หรือลบข้อมูลผลงาน/รายชื่ออาจารย์ได้ทั้งหมด (รวมถึงข้อมูลเดิมจากไฟล์ Excel) ข้อมูลบันทึกแบบ<b>ส่วนกลาง (shared)</b> ทุกคนที่เปิดไฟล์นี้เห็นตรงกัน ไม่กระทบไฟล์ Excel ต้นฉบับ</div>
+        <div>โหมดผู้ดูแล — เพิ่ม แก้ไข หรือลบข้อมูลผลงาน/รายชื่ออาจารย์ได้ทั้งหมด (รวมถึงข้อมูลเดิมจากไฟล์ Excel) ข้อมูลบันทึกไว้บน<b>เซิร์ฟเวอร์กลาง</b> ทุกคนที่เปิดเว็บนี้ (ทุกเครื่อง) เห็นข้อมูลตรงกันทันที การแก้ไขต้องใส่รหัสผ่านทุกครั้ง ไม่กระทบไฟล์ Excel ต้นฉบับ</div>
       </div>
 
       <div class="admin-grid">
@@ -388,21 +413,41 @@ let charts = {};
 
 function thb(n){return n.toLocaleString('th-TH');}
 
-// ---------- storage ----------
-async function loadJSON(key, fallback){
-  try{ const r = await window.storage.get(key, true); return r && r.value ? JSON.parse(r.value) : fallback; }
-  catch(e){ return fallback; }
-}
-async function saveJSON(key, val){
-  try{ await window.storage.set(key, JSON.stringify(val), true); }catch(e){ console.error('save failed', key, e); }
-}
+// ---------- storage (shared, via Worker API + KV) ----------
+let adminPassword = null; // held in memory only, re-entered each time admin mode is opened
+
 async function loadAdminData(){
-  adminPubs = await loadJSON('admin-pubs', []);
-  adminRoster = await loadJSON('admin-roster', []);
-  pubEdits = await loadJSON('pub-edits', {});
-  pubDeletes = await loadJSON('pub-deletes', []);
-  rosterEdits = await loadJSON('roster-edits', {});
-  rosterDeletes = await loadJSON('roster-deletes', []);
+  try{
+    const res = await fetch('/api/admin-data');
+    const d = await res.json();
+    adminPubs = d.adminPubs || [];
+    adminRoster = d.adminRoster || [];
+    pubEdits = d.pubEdits || {};
+    pubDeletes = d.pubDeletes || [];
+    rosterEdits = d.rosterEdits || {};
+    rosterDeletes = d.rosterDeletes || [];
+  }catch(e){
+    console.error('load admin data failed', e);
+  }
+}
+
+async function saveAdminData(){
+  try{
+    const res = await fetch('/api/admin-data', {
+      method:'POST',
+      headers:{'Content-Type':'application/json', 'X-Admin-Password': adminPassword || ''},
+      body: JSON.stringify({adminPubs, adminRoster, pubEdits, pubDeletes, rosterEdits, rosterDeletes})
+    });
+    if(!res.ok){
+      alert('บันทึกไม่สำเร็จ — รหัสผ่านหมดอายุหรือไม่ถูกต้อง กรุณาปิดแล้วเปิดโหมดผู้ดูแลใหม่');
+      return false;
+    }
+    return true;
+  }catch(e){
+    console.error('save admin data failed', e);
+    alert('บันทึกไม่สำเร็จ — เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ลองใหม่อีกครั้ง');
+    return false;
+  }
 }
 
 // ---------- effective data (baseline + overlay) ----------
@@ -587,13 +632,57 @@ function populateFacultyDatalist(facTable){
 
 // ---------- admin toggle ----------
 const adminToggle = document.getElementById('adminToggle');
+const pwModal = document.getElementById('pwModal');
+const pwInput = document.getElementById('pwInput');
+const pwError = document.getElementById('pwError');
+
 adminToggle.addEventListener('click', ()=>{
   const sec = document.getElementById('adminSection');
-  const on = sec.classList.toggle('show');
-  adminToggle.classList.toggle('on', on);
-  adminToggle.textContent = on ? 'ปิดโหมดผู้ดูแล' : 'โหมดผู้ดูแล';
-  if(on) sec.scrollIntoView({behavior:'smooth', block:'start'});
+  if(sec.classList.contains('show')){
+    // turning off — also drop the in-memory password so it must be re-entered next time
+    sec.classList.remove('show');
+    adminToggle.classList.remove('on');
+    adminToggle.textContent = 'โหมดผู้ดูแล';
+    adminPassword = null;
+    return;
+  }
+  pwError.style.display = 'none';
+  pwInput.value = '';
+  pwModal.style.display = 'flex';
+  pwInput.focus();
 });
+
+document.getElementById('pwCancel').addEventListener('click', ()=>{ pwModal.style.display='none'; });
+pwModal.addEventListener('click', (e)=>{ if(e.target===pwModal) pwModal.style.display='none'; });
+document.getElementById('pwSubmit').addEventListener('click', submitAdminPassword);
+pwInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') submitAdminPassword(); });
+
+async function submitAdminPassword(){
+  const pw = pwInput.value;
+  if(!pw) return;
+  pwError.style.display = 'none';
+  try{
+    const res = await fetch('/api/verify-admin', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({password: pw})
+    });
+    const data = await res.json();
+    if(data.ok){
+      adminPassword = pw;
+      pwModal.style.display = 'none';
+      const sec = document.getElementById('adminSection');
+      sec.classList.add('show');
+      adminToggle.classList.add('on');
+      adminToggle.textContent = 'ปิดโหมดผู้ดูแล';
+      sec.scrollIntoView({behavior:'smooth', block:'start'});
+    } else {
+      pwError.textContent = 'รหัสผ่านไม่ถูกต้อง';
+      pwError.style.display = 'block';
+    }
+  }catch(e){
+    pwError.textContent = 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ลองใหม่อีกครั้ง';
+    pwError.style.display = 'block';
+  }
+}
 function fillDeptSelect(sel){ sel.innerHTML = DEPTS.map(d=>`<option value="${d}">${d}</option>`).join(''); }
 fillDeptSelect(document.getElementById('pf_dept'));
 fillDeptSelect(document.getElementById('ff_dept'));
@@ -616,16 +705,16 @@ document.getElementById('pubForm').addEventListener('submit', async (e)=>{
   if(editingPubId){
     if(isAdminId(editingPubId)){
       const idx = adminPubs.findIndex(p=>p.id===editingPubId);
-      if(idx>-1){ adminPubs[idx] = {...adminPubs[idx], ...fields}; await saveJSON('admin-pubs', adminPubs); }
+      if(idx>-1){ adminPubs[idx] = {...adminPubs[idx], ...fields}; await saveAdminData(); }
     } else {
       pubEdits[editingPubId] = fields;
-      await saveJSON('pub-edits', pubEdits);
+      await saveAdminData();
     }
     cancelPubEdit();
   } else {
     const rec = {...fields, id:'a'+Date.now()+'_'+(nextPubCounter++)};
     adminPubs.push(rec);
-    await saveJSON('admin-pubs', adminPubs);
+    await saveAdminData();
   }
   e.target.reset();
   const st = document.getElementById('pubSaveStatus');
@@ -659,12 +748,11 @@ function startPubEdit(pub){
 async function deletePub(id){
   if(isAdminId(id)){
     adminPubs = adminPubs.filter(p=>p.id!==id);
-    await saveJSON('admin-pubs', adminPubs);
+    await saveAdminData();
   } else {
     if(!pubDeletes.includes(id)) pubDeletes.push(id);
     delete pubEdits[id];
-    await saveJSON('pub-deletes', pubDeletes);
-    await saveJSON('pub-edits', pubEdits);
+    await saveAdminData();
   }
   if(editingPubId===id) cancelPubEdit();
   renderAll();
@@ -680,16 +768,16 @@ document.getElementById('facForm').addEventListener('submit', async (e)=>{
   if(editingFacId){
     if(isAdminId(editingFacId)){
       const idx = adminRoster.findIndex(r=>r.id===editingFacId);
-      if(idx>-1){ adminRoster[idx] = {...adminRoster[idx], ...fields}; await saveJSON('admin-roster', adminRoster); }
+      if(idx>-1){ adminRoster[idx] = {...adminRoster[idx], ...fields}; await saveAdminData(); }
     } else {
       rosterEdits[editingFacId] = fields;
-      await saveJSON('roster-edits', rosterEdits);
+      await saveAdminData();
     }
     cancelFacEdit();
   } else {
     const rec = {...fields, id:'a'+Date.now()+'_'+(nextFacCounter++)};
     adminRoster.push(rec);
-    await saveJSON('admin-roster', adminRoster);
+    await saveAdminData();
   }
   e.target.reset();
   const st = document.getElementById('facSaveStatus');
@@ -718,12 +806,11 @@ function startFacEdit(fac){
 async function deleteFac(id){
   if(isAdminId(id)){
     adminRoster = adminRoster.filter(r=>r.id!==id);
-    await saveJSON('admin-roster', adminRoster);
+    await saveAdminData();
   } else {
     if(!rosterDeletes.includes(id)) rosterDeletes.push(id);
     delete rosterEdits[id];
-    await saveJSON('roster-deletes', rosterDeletes);
-    await saveJSON('roster-edits', rosterEdits);
+    await saveAdminData();
   }
   if(editingFacId===id) cancelFacEdit();
   renderAll();

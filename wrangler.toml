@@ -1,0 +1,13 @@
+name = "researchpublication"
+main = "worker.js"
+compatibility_date = "2026-07-31"
+
+[assets]
+directory = "./"
+binding = "ASSETS"
+
+# Create this KV namespace in the Cloudflare dashboard first
+# (Workers & Pages -> KV -> Create namespace), then paste its ID below.
+[[kv_namespaces]]
+binding = "DASHBOARD_KV"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
