@@ -6,7 +6,7 @@
 <title>Dashboard ผลงานตีพิมพ์อาจารย์ | คณะพยาบาลศาสตร์</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Thai:wght@500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js" onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js';document.head.appendChild(s);"></script>
 <style>
   :root{
     --ink:#12242b; --paper:#f6f3ea; --panel:#ffffff;
@@ -529,10 +529,23 @@ function computeAll(){
 }
 
 // ---------- render ----------
-function destroyCharts(){ Object.values(charts).forEach(c=>c && c.destroy()); charts = {}; }
+function destroyCharts(){ try{ Object.values(charts).forEach(c=>c && c.destroy()); }catch(e){} charts = {}; }
+
+function showChartFallback(canvasId, label){
+  const el = document.getElementById(canvasId);
+  if(!el || !el.parentElement) return;
+  const note = document.createElement('p');
+  note.className = 'empty-note';
+  note.style.textAlign = 'center';
+  note.style.padding = '40px 10px';
+  note.textContent = 'โหลดกราฟไม่สำเร็จ (ไลบรารีกราฟไม่พร้อมใช้งาน) — ' + label + ' ยังดูได้จากตาราง/รายการด้านบน';
+  el.replaceWith(note);
+}
 
 function renderAll(){
   const D = computeAll();
+
+  // ---- Everything below renders from plain data first, independent of Chart.js ----
 
   document.getElementById('statRow').innerHTML = [
     {num:D.total_pubs, lbl:'ผลงานตีพิมพ์ทั้งหมด', accent:true},
@@ -551,32 +564,6 @@ function renderAll(){
       <div class="dept-meta">อาจารย์ ${d.faculty} คน · เฉลี่ย ${d.avg_per_faculty} ชิ้น/คน ${d.pubs_incomplete>0 ? '· ข้อมูลไม่ครบ '+d.pubs_incomplete+' ชิ้น':''}</div>
     </div>
   `).join('');
-
-  destroyCharts();
-
-  charts.dept = new Chart(document.getElementById('deptFacultyChart'), {
-    type:'bar',
-    data:{labels:D.by_dept.map(d=>d.dept), datasets:[
-      {label:'อาจารย์ (คน)', data:D.by_dept.map(d=>d.faculty), backgroundColor:COLORS.gold, borderRadius:6},
-      {label:'ผลงาน (ชิ้น)', data:D.by_dept.map(d=>d.pubs), backgroundColor:COLORS.navy, borderRadius:6},
-    ]},
-    options:{responsive:true, plugins:{legend:{position:'bottom', labels:{font:{family:'Noto Sans Thai'}}}, title:{display:true,text:'อาจารย์ vs ผลงานตีพิมพ์ ต่อสาขา', font:{family:'Noto Serif Thai', size:14}}}, scales:{x:{ticks:{font:{family:'Noto Sans Thai', size:11}}}, y:{beginAtZero:true, ticks:{font:{family:'Noto Sans Thai'}}}}}
-  });
-
-  const levelLabels = Object.keys(D.level_counts);
-  const levelVals = Object.values(D.level_counts);
-  charts.level = new Chart(document.getElementById('levelChart'), {
-    type:'doughnut',
-    data:{labels:levelLabels, datasets:[{data:levelVals, backgroundColor:[COLORS.navy,COLORS.teal,COLORS.gold,COLORS.coral,'#9aa5a6','#4f6d75'], borderWidth:2, borderColor:'#fff'}]},
-    options:{plugins:{legend:{position:'bottom', labels:{font:{family:'Noto Sans Thai', size:12}}}, title:{display:true,text:'สัดส่วนระดับวารสาร', font:{family:'Noto Serif Thai', size:14}}}}
-  });
-
-  const years = Object.keys(D.yearly).sort();
-  charts.year = new Chart(document.getElementById('yearChart'), {
-    type:'line',
-    data:{labels:years.map(y=>'พ.ศ. '+y), datasets:[{label:'จำนวนผลงานตีพิมพ์', data:years.map(y=>D.yearly[y]), borderColor:COLORS.teal, backgroundColor:'rgba(31,122,114,0.15)', fill:true, tension:0.35, pointBackgroundColor:COLORS.navy, pointRadius:4}]},
-    options:{plugins:{legend:{display:false}, title:{display:true,text:'แนวโน้มผลงานตีพิมพ์รายปี', font:{family:'Noto Serif Thai', size:14}}}, scales:{y:{beginAtZero:true, ticks:{stepSize:2, font:{family:'Noto Sans Thai'}}}, x:{ticks:{font:{family:'Noto Sans Thai'}}}}}
-  });
 
   const watchItems = [...D.expired.map(x=>({...x,status:'expired'})), ...D.expiring_soon.map(x=>({...x,status:'soon'}))].sort((a,b)=>a.days-b.days);
   document.getElementById('watchEmpty').style.display = watchItems.length===0 ? 'block' : 'none';
@@ -601,6 +588,45 @@ function renderAll(){
   renderFacultyTable(D.faculty_table);
   populateFacultyDatalist(D.faculty_table);
   renderManage(D.pubs, D.faculty_table);
+
+  // ---- Charts render last; a Chart.js/CDN failure here must never block anything above ----
+  destroyCharts();
+  if(typeof Chart === 'undefined'){
+    showChartFallback('deptFacultyChart', 'จำนวนอาจารย์/ผลงานต่อสาขา');
+    showChartFallback('levelChart', 'สัดส่วนระดับวารสาร');
+    showChartFallback('yearChart', 'แนวโน้มผลงานตีพิมพ์รายปี');
+    return;
+  }
+
+  try{
+    charts.dept = new Chart(document.getElementById('deptFacultyChart'), {
+      type:'bar',
+      data:{labels:D.by_dept.map(d=>d.dept), datasets:[
+        {label:'อาจารย์ (คน)', data:D.by_dept.map(d=>d.faculty), backgroundColor:COLORS.gold, borderRadius:6},
+        {label:'ผลงาน (ชิ้น)', data:D.by_dept.map(d=>d.pubs), backgroundColor:COLORS.navy, borderRadius:6},
+      ]},
+      options:{responsive:true, plugins:{legend:{position:'bottom', labels:{font:{family:'Noto Sans Thai'}}}, title:{display:true,text:'อาจารย์ vs ผลงานตีพิมพ์ ต่อสาขา', font:{family:'Noto Serif Thai', size:14}}}, scales:{x:{ticks:{font:{family:'Noto Sans Thai', size:11}}}, y:{beginAtZero:true, ticks:{font:{family:'Noto Sans Thai'}}}}}
+    });
+  }catch(e){ console.error('dept chart failed', e); showChartFallback('deptFacultyChart', 'จำนวนอาจารย์/ผลงานต่อสาขา'); }
+
+  try{
+    const levelLabels = Object.keys(D.level_counts);
+    const levelVals = Object.values(D.level_counts);
+    charts.level = new Chart(document.getElementById('levelChart'), {
+      type:'doughnut',
+      data:{labels:levelLabels, datasets:[{data:levelVals, backgroundColor:[COLORS.navy,COLORS.teal,COLORS.gold,COLORS.coral,'#9aa5a6','#4f6d75'], borderWidth:2, borderColor:'#fff'}]},
+      options:{plugins:{legend:{position:'bottom', labels:{font:{family:'Noto Sans Thai', size:12}}}, title:{display:true,text:'สัดส่วนระดับวารสาร', font:{family:'Noto Serif Thai', size:14}}}}
+    });
+  }catch(e){ console.error('level chart failed', e); showChartFallback('levelChart', 'สัดส่วนระดับวารสาร'); }
+
+  try{
+    const years = Object.keys(D.yearly).sort();
+    charts.year = new Chart(document.getElementById('yearChart'), {
+      type:'line',
+      data:{labels:years.map(y=>'พ.ศ. '+y), datasets:[{label:'จำนวนผลงานตีพิมพ์', data:years.map(y=>D.yearly[y]), borderColor:COLORS.teal, backgroundColor:'rgba(31,122,114,0.15)', fill:true, tension:0.35, pointBackgroundColor:COLORS.navy, pointRadius:4}]},
+      options:{plugins:{legend:{display:false}, title:{display:true,text:'แนวโน้มผลงานตีพิมพ์รายปี', font:{family:'Noto Serif Thai', size:14}}}, scales:{y:{beginAtZero:true, ticks:{stepSize:2, font:{family:'Noto Sans Thai'}}}, x:{ticks:{font:{family:'Noto Sans Thai'}}}}}
+    });
+  }catch(e){ console.error('year chart failed', e); showChartFallback('yearChart', 'แนวโน้มผลงานตีพิมพ์รายปี'); }
 }
 
 // ---------- faculty table (public, section 6) ----------
