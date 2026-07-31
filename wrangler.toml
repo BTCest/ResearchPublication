@@ -6,8 +6,13 @@ compatibility_date = "2026-07-31"
 directory = "./"
 binding = "ASSETS"
 
-# Create this KV namespace in the Cloudflare dashboard first
-# (Workers & Pages -> KV -> Create namespace), then paste its ID below.
-[[kv_namespaces]]
-binding = "DASHBOARD_KV"
-id = "ac2ff761830f40079a0431094525dfac"
+# The spreadsheet ID from your Google Sheet's URL, e.g.
+# https://docs.google.com/spreadsheets/d/THIS_PART_IS_THE_ID/edit
+[vars]
+GOOGLE_SHEET_ID = "REPLACE_WITH_YOUR_GOOGLE_SHEET_ID"
+
+# Set these as SECRETS (not here) in the Cloudflare dashboard:
+# Settings -> Variables and Secrets -> Add:
+#   ADMIN_PASSWORD                - your admin password
+#   GOOGLE_SERVICE_ACCOUNT_EMAIL  - the service account's "client_email"
+#   GOOGLE_PRIVATE_KEY            - the service account's "private_key" (paste as-is, keep the \n)
