@@ -6,7 +6,7 @@
 <title>Dashboard ผลงานตีพิมพ์อาจารย์ | คณะพยาบาลศาสตร์</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Thai:wght@500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js" onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js';document.head.appendChild(s);"></script>
+<script src="./chart.umd.min.js"></script>
 <style>
   :root{
     --ink:#12242b; --paper:#f6f3ea; --panel:#ffffff;
@@ -132,6 +132,15 @@
   .btn-ghost:hover{border-color:var(--navy);color:var(--navy);}
   .edit-flag{font-size:11.5px;font-weight:700;color:var(--gold);background:var(--gold-soft);padding:3px 10px;border-radius:999px;}
   .save-status{font-size:12px;color:var(--teal);font-weight:600;height:16px;margin-top:6px;}
+  .pagination{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:16px;flex-wrap:wrap;}
+  .page-btn{
+    min-width:32px;height:32px;padding:0 8px;border-radius:8px;border:1px solid var(--line);background:var(--panel);
+    color:var(--navy);font-size:12.5px;font-weight:700;cursor:pointer;font-family:var(--sans);
+  }
+  .page-btn:hover:not(:disabled){border-color:var(--teal);color:var(--teal);}
+  .page-btn.active{background:var(--navy);border-color:var(--navy);color:#fff;}
+  .page-btn:disabled{opacity:0.35;cursor:default;}
+  .page-info{font-size:12px;color:var(--muted);margin-right:8px;}
 
   .manage-panel{margin-bottom:0;}
   .manage-tabs{display:flex;gap:8px;margin-bottom:16px;}
@@ -351,12 +360,20 @@
   <div class="wrap">
     <div class="grid-2">
       <div class="panel">
-        <div class="section-head" style="margin-bottom:14px;"><h2 class="section-title" style="font-size:18px;"><span class="idx">4</span>ผลงานที่ข้อมูลยังไม่ครบ</h2></div>
+        <div class="section-head" style="margin-bottom:14px;">
+          <h2 class="section-title" style="font-size:18px;"><span class="idx">4</span>ผลงานที่ข้อมูลยังไม่ครบ</h2>
+          <input type="text" class="search-box" id="incompleteSearch" placeholder="ค้นหาชื่ออาจารย์ สาขา หรือชื่อเรื่อง...">
+        </div>
         <div class="flag-list" id="incompleteList"></div>
+        <div class="pagination" id="incompletePagination"></div>
       </div>
       <div class="panel">
-        <div class="section-head" style="margin-bottom:14px;"><h2 class="section-title" style="font-size:18px;"><span class="idx">5</span>อาจารย์ที่ยังไม่มีผลงานบันทึก</h2></div>
+        <div class="section-head" style="margin-bottom:14px;">
+          <h2 class="section-title" style="font-size:18px;"><span class="idx">5</span>อาจารย์ที่ยังไม่มีผลงานบันทึก</h2>
+          <input type="text" class="search-box" id="zeroSearch" placeholder="ค้นหาชื่ออาจารย์หรือสาขา...">
+        </div>
         <div class="flag-list" id="zeroList"></div>
+        <div class="pagination" id="zeroPagination"></div>
       </div>
     </div>
   </div>
@@ -381,6 +398,7 @@
         <tbody id="facBody"></tbody>
       </table>
     </div>
+    <div class="pagination" id="facPagination"></div>
   </div>
 </section>
 
@@ -410,8 +428,39 @@ let rosterDeletes = [];
 
 let nextPubCounter = 0, nextFacCounter = 0;
 let charts = {};
+let incompletePage = 1, zeroPage = 1, facPage = 1;
 
 function thb(n){return n.toLocaleString('th-TH');}
+
+// ---------- generic pagination helper ----------
+const PAGE_SIZE = 10;
+function paginate(items, page){
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const clamped = Math.min(Math.max(1, page), totalPages);
+  const start = (clamped-1)*PAGE_SIZE;
+  return { pageItems: items.slice(start, start+PAGE_SIZE), page: clamped, totalPages, total: items.length };
+}
+function renderPagination(containerId, page, totalPages, onGo){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  if(totalPages<=1){ el.innerHTML = ''; return; }
+  let html = `<span class="page-info">หน้า ${page} / ${totalPages}</span>`;
+  html += `<button class="page-btn" data-p="${page-1}" ${page<=1?'disabled':''}>‹</button>`;
+  const windowSize = 5;
+  let startP = Math.max(1, page-Math.floor(windowSize/2));
+  let endP = Math.min(totalPages, startP+windowSize-1);
+  startP = Math.max(1, endP-windowSize+1);
+  if(startP>1) html += `<button class="page-btn" data-p="1">1</button>` + (startP>2?'<span class="page-info">…</span>':'');
+  for(let p=startP; p<=endP; p++){
+    html += `<button class="page-btn ${p===page?'active':''}" data-p="${p}">${p}</button>`;
+  }
+  if(endP<totalPages) html += (endP<totalPages-1?'<span class="page-info">…</span>':'') + `<button class="page-btn" data-p="${totalPages}">${totalPages}</button>`;
+  html += `<button class="page-btn" data-p="${page+1}" ${page>=totalPages?'disabled':''}>›</button>`;
+  el.innerHTML = html;
+  el.querySelectorAll('.page-btn[data-p]').forEach(btn=>{
+    btn.addEventListener('click', ()=> onGo(parseInt(btn.dataset.p)));
+  });
+}
 
 // ---------- storage (shared, via Worker API + KV) ----------
 let adminPassword = null; // held in memory only, re-entered each time admin mode is opened
@@ -576,14 +625,24 @@ function renderAll(){
   `).join('');
 
   const incWrap = document.getElementById('incompleteList');
-  incWrap.innerHTML = D.incomplete.length===0 ? '<p class="empty-note">ไม่มีรายการ</p>' : D.incomplete.map(i=>`
+  const incQ = document.getElementById('incompleteSearch').value.trim().toLowerCase();
+  const incFiltered = D.incomplete.filter(i => !incQ || i.name.toLowerCase().includes(incQ) || i.dept.toLowerCase().includes(incQ) || (i.title||'').toLowerCase().includes(incQ));
+  const incP = paginate(incFiltered, incompletePage);
+  incompletePage = incP.page;
+  incWrap.innerHTML = incP.pageItems.length===0 ? '<p class="empty-note">ไม่พบรายการ</p>' : incP.pageItems.map(i=>`
     <div class="flag-item"><div><div class="flag-name">${i.name}</div><div class="flag-title">${i.title}</div></div><div class="flag-dept">${i.dept}</div></div>
   `).join('');
+  renderPagination('incompletePagination', incP.page, incP.totalPages, (p)=>{ incompletePage=p; renderAll(); });
 
   const zeroWrap = document.getElementById('zeroList');
-  zeroWrap.innerHTML = D.zero_pub_faculty.length===0 ? '<p class="empty-note">ไม่มีรายการ</p>' : D.zero_pub_faculty.map(z=>`
+  const zeroQ = document.getElementById('zeroSearch').value.trim().toLowerCase();
+  const zeroFiltered = D.zero_pub_faculty.filter(z => !zeroQ || z.name.toLowerCase().includes(zeroQ) || z.dept.toLowerCase().includes(zeroQ));
+  const zeroP = paginate(zeroFiltered, zeroPage);
+  zeroPage = zeroP.page;
+  zeroWrap.innerHTML = zeroP.pageItems.length===0 ? '<p class="empty-note">ไม่พบรายการ</p>' : zeroP.pageItems.map(z=>`
     <div class="flag-item"><div class="flag-name">${z.name}</div><div class="flag-dept">${z.dept}</div></div>
   `).join('');
+  renderPagination('zeroPagination', zeroP.page, zeroP.totalPages, (p)=>{ zeroPage=p; renderAll(); });
 
   renderFacultyTable(D.faculty_table);
   populateFacultyDatalist(D.faculty_table);
@@ -637,7 +696,9 @@ function paintTable(){
   const q = document.getElementById('facSearch').value.trim().toLowerCase();
   let rows = currentFacData.filter(r=>r.name.toLowerCase().includes(q) || r.dept.toLowerCase().includes(q));
   rows.sort((a,b)=>{ if(typeof a[sortKey]==='number') return (a[sortKey]-b[sortKey])*sortDir; return a[sortKey].localeCompare(b[sortKey],'th')*sortDir; });
-  body.innerHTML = rows.map(r=>`
+  const pg = paginate(rows, facPage);
+  facPage = pg.page;
+  body.innerHTML = pg.pageItems.length===0 ? '<tr><td colspan="4" class="empty-note">ไม่พบข้อมูล</td></tr>' : pg.pageItems.map(r=>`
     <tr>
       <td>${r.name}${r.admin?'<span class="badge-admin">เพิ่มใหม่</span>':''}${r.edited?'<span class="badge-edited">แก้ไขแล้ว</span>':''}</td>
       <td>${r.dept}</td>
@@ -645,10 +706,13 @@ function paintTable(){
       <td>${r.pubs>0 ? (r.complete===r.pubs ? '<span class="badge-complete">ครบ '+r.complete+'/'+r.pubs+'</span>' : '<span class="badge-incomplete">ครบ '+r.complete+'/'+r.pubs+'</span>') : '<span class="badge-incomplete">ยังไม่มีผลงาน</span>'}</td>
     </tr>
   `).join('');
+  renderPagination('facPagination', pg.page, pg.totalPages, (p)=>{ facPage=p; paintTable(); });
 }
-document.getElementById('facSearch').addEventListener('input', paintTable);
+document.getElementById('facSearch').addEventListener('input', ()=>{ facPage=1; paintTable(); });
+document.getElementById('incompleteSearch').addEventListener('input', ()=>{ incompletePage=1; renderAll(); });
+document.getElementById('zeroSearch').addEventListener('input', ()=>{ zeroPage=1; renderAll(); });
 document.querySelectorAll('#facTable th').forEach(th=>{
-  th.addEventListener('click', ()=>{ const k=th.dataset.key; if(sortKey===k) sortDir*=-1; else {sortKey=k; sortDir=(k==='name'||k==='dept')?1:-1;} paintTable(); });
+  th.addEventListener('click', ()=>{ const k=th.dataset.key; if(sortKey===k) sortDir*=-1; else {sortKey=k; sortDir=(k==='name'||k==='dept')?1:-1;} facPage=1; paintTable(); });
 });
 function populateFacultyDatalist(facTable){
   const dl = document.getElementById('facultyNames');
