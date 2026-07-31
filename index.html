@@ -120,6 +120,8 @@
   .admin-banner{background:var(--navy);color:#fff;border-radius:var(--radius);padding:16px 20px;margin-bottom:22px;font-size:13px;line-height:1.6;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center;}
   .admin-banner b{color:var(--gold-soft);}
   .admin-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px;}
+  .export-panel{margin-bottom:18px;}
+  .export-actions{display:flex;gap:10px;flex-wrap:wrap;}
   .form-panel h3{font-family:var(--serif);font-size:16px;color:var(--navy);margin:0 0 14px;display:flex;justify-content:space-between;align-items:center;}
   .field{margin-bottom:12px;}
   .field label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:5px;}
@@ -217,6 +219,16 @@
     <div id="adminSection">
       <div class="admin-banner">
         <div>โหมดผู้ดูแล — เพิ่ม แก้ไข หรือลบข้อมูลผลงาน/รายชื่ออาจารย์ได้ทั้งหมด (รวมถึงข้อมูลเดิมจากไฟล์ Excel) ข้อมูลบันทึกไว้บน<b>เซิร์ฟเวอร์กลาง</b> ทุกคนที่เปิดเว็บนี้ (ทุกเครื่อง) เห็นข้อมูลตรงกันทันที การแก้ไขต้องใส่รหัสผ่านทุกครั้ง ไม่กระทบไฟล์ Excel ต้นฉบับ</div>
+      </div>
+
+      <div class="panel export-panel">
+        <h3 style="font-family:var(--serif);font-size:15px;color:var(--navy);margin:0 0 6px;">Export ข้อมูลทั้งหมด</h3>
+        <p style="font-size:12.5px;color:var(--muted);margin:0 0 14px;">ดาวน์โหลดข้อมูลปัจจุบันทั้งหมด (ตั้งต้น + ที่เพิ่ม/แก้ไขในโหมดผู้ดูแล) เก็บไว้เป็น backup หรือส่งให้ Claude รวมเป็นข้อมูลตั้งต้นชุดใหม่เมื่อพื้นที่ใกล้เต็ม</p>
+        <div class="export-actions">
+          <button type="button" class="btn-primary" id="exportPubsCsv">Export ผลงานตีพิมพ์ (.csv)</button>
+          <button type="button" class="btn-primary" id="exportFacCsv">Export รายชื่ออาจารย์ (.csv)</button>
+          <button type="button" class="btn-ghost" id="exportJson" style="margin-left:0;">Export ทั้งหมด (.json)</button>
+        </div>
       </div>
 
       <div class="admin-grid">
@@ -970,6 +982,55 @@ function renderManage(pubs, facTable){
     });
   });
 }
+
+// ---------- export (CSV / JSON) ----------
+function csvEscape(v){
+  if(v===null || v===undefined) return '';
+  const s = String(v).replace(/\r?\n/g, ' ');
+  if(/[",]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+  return s;
+}
+function toCSV(headers, rows){
+  const lines = [headers.map(csvEscape).join(',')];
+  rows.forEach(r => lines.push(r.map(csvEscape).join(',')));
+  return '\ufeff' + lines.join('\r\n'); // BOM so Excel renders Thai (UTF-8) correctly
+}
+function downloadBlob(content, filename, mime){
+  const blob = new Blob([content], {type: mime});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+function todayStamp(){
+  const d = new Date();
+  return d.toISOString().slice(0,10);
+}
+
+document.getElementById('exportPubsCsv').addEventListener('click', ()=>{
+  const pubs = effectivePubs();
+  const headers = ['ชื่ออาจารย์','สาขา','ชื่องานวิจัย','ฐานวารสาร','ระดับวารสาร','ปีที่ตีพิมพ์ (พ.ศ.)','วันหมดอายุ (5 ปี)'];
+  const rows = pubs.map(p => [p.name, p.dept, p.title, p.base||'', p.level||'', p.year||'', p.expiry||'']);
+  downloadBlob(toCSV(headers, rows), `publications_export_${todayStamp()}.csv`, 'text/csv;charset=utf-8');
+});
+
+document.getElementById('exportFacCsv').addEventListener('click', ()=>{
+  const roster = effectiveRoster();
+  const headers = ['ชื่ออาจารย์','สาขา'];
+  const rows = roster.map(r => [r.name, r.dept]);
+  downloadBlob(toCSV(headers, rows), `faculty_export_${todayStamp()}.csv`, 'text/csv;charset=utf-8');
+});
+
+document.getElementById('exportJson').addEventListener('click', ()=>{
+  const payload = {
+    exported: new Date().toISOString(),
+    dept_order: DEPTS,
+    roster: effectiveRoster().map(({id, edited, ...r})=>r),
+    pubs: effectivePubs().map(({id, edited, ...p})=>p),
+  };
+  downloadBlob(JSON.stringify(payload, null, 2), `dashboard_data_export_${todayStamp()}.json`, 'application/json;charset=utf-8');
+});
 
 // ---------- init ----------
 (async function init(){
