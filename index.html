@@ -118,6 +118,24 @@
   .pw-box input:focus{outline:2px solid var(--teal);outline-offset:1px;}
   .pw-actions{display:flex;gap:8px;}
   .pw-error{color:var(--coral);font-size:12.5px;font-weight:600;margin-top:10px;display:none;}
+
+  /* ---- themed alert modal (custom, no external dependency) ---- */
+  .swal-overlay{
+    position:fixed;inset:0;background:rgba(74,99,73,0.55);z-index:200;
+    display:flex;align-items:center;justify-content:center;padding:20px;
+  }
+  .swal-box{
+    background:var(--panel);border-radius:var(--radius);padding:32px 28px;max-width:360px;width:100%;
+    text-align:center;box-shadow:0 20px 50px rgba(0,0,0,0.25);animation:swalPop .18s ease-out;
+  }
+  @keyframes swalPop{from{opacity:0;transform:scale(.92);}to{opacity:1;transform:scale(1);}}
+  .swal-icon{
+    width:56px;height:56px;border-radius:50%;border:2.5px solid;display:flex;align-items:center;justify-content:center;
+    font-size:26px;font-weight:800;margin:0 auto 16px;
+  }
+  .swal-title{font-family:var(--serif);font-size:17px;color:var(--navy);margin:0 0 8px;}
+  .swal-text{font-size:13.5px;color:var(--muted);margin:0 0 22px;line-height:1.6;}
+  .swal-ok{width:100%;}
   .admin-banner{background:var(--navy);color:#fff;border-radius:var(--radius);padding:16px 20px;margin-bottom:22px;font-size:13px;line-height:1.6;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center;}
   .admin-banner b{color:var(--gold-soft);}
   .admin-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px;}
@@ -445,6 +463,30 @@ let incompletePage = 1, zeroPage = 1, facPage = 1;
 
 function thb(n){return n.toLocaleString('th-TH');}
 
+// ---------- themed alert modal (replaces native alert()) ----------
+function showAlert({icon='info', title='', text=''} = {}){
+  const existing = document.getElementById('swalOverlay');
+  if(existing) existing.remove();
+  const iconGlyph = { success:'✓', error:'✕', warning:'!', info:'i' }[icon] || 'i';
+  const iconColor = { success:'var(--teal)', error:'var(--coral)', warning:'var(--gold)', info:'var(--navy)' }[icon] || 'var(--navy)';
+  const overlay = document.createElement('div');
+  overlay.id = 'swalOverlay';
+  overlay.className = 'swal-overlay';
+  overlay.innerHTML = `
+    <div class="swal-box">
+      <div class="swal-icon" style="color:${iconColor};border-color:${iconColor};">${iconGlyph}</div>
+      ${title ? `<h3 class="swal-title">${title}</h3>` : ''}
+      ${text ? `<p class="swal-text">${text}</p>` : ''}
+      <button type="button" class="btn-primary swal-ok">ตกลง</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const close = ()=> overlay.remove();
+  overlay.querySelector('.swal-ok').addEventListener('click', close);
+  overlay.addEventListener('click', (e)=>{ if(e.target===overlay) close(); });
+  document.addEventListener('keydown', function esc(e){ if(e.key==='Escape'){ close(); document.removeEventListener('keydown', esc); } });
+}
+
 // ---------- generic pagination helper ----------
 const PAGE_SIZE = 10;
 function paginate(items, page){
@@ -501,13 +543,13 @@ async function saveAdminData(){
       body: JSON.stringify({adminPubs, adminRoster, pubEdits, pubDeletes, rosterEdits, rosterDeletes})
     });
     if(!res.ok){
-      alert('บันทึกไม่สำเร็จ — รหัสผ่านหมดอายุหรือไม่ถูกต้อง กรุณาปิดแล้วเปิดโหมดผู้ดูแลใหม่');
+      showAlert({icon:'error', title:'บันทึกไม่สำเร็จ', text:'รหัสผ่านหมดอายุหรือไม่ถูกต้อง กรุณาปิดแล้วเปิดโหมดผู้ดูแลใหม่'});
       return false;
     }
     return true;
   }catch(e){
     console.error('save admin data failed', e);
-    alert('บันทึกไม่สำเร็จ — เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ลองใหม่อีกครั้ง');
+    showAlert({icon:'error', title:'บันทึกไม่สำเร็จ', text:'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ลองใหม่อีกครั้ง'});
     return false;
   }
 }
