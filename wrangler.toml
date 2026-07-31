@@ -10,4 +10,4 @@ binding = "ASSETS"
 # (Workers & Pages -> KV -> Create namespace), then paste its ID below.
 [[kv_namespaces]]
 binding = "DASHBOARD_KV"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id = "ac2ff761830f40079a0431094525dfac"
