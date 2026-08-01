@@ -204,9 +204,10 @@
 
   @media (max-width:960px){
     aside.sidebar{position:static;height:auto;width:100%;border-right:none;border-bottom:1px solid var(--line);}
-    aside.sidebar .sidebar-nav{flex-direction:row;flex-wrap:wrap;}
-    .app-shell{flex-direction:column;}
-    .main-content{padding:20px 18px 50px;}
+    aside.sidebar .sidebar-nav{flex-direction:column;align-items:stretch;}
+    aside.sidebar .sidebar-nav a{justify-content:flex-start;}
+    .app-shell{flex-direction:column;align-items:stretch;}
+    .main-content{padding:20px 18px 50px;min-width:0;}
   }
   @media (max-width:880px){
     .stat-row{grid-template-columns:repeat(2,1fr);}
@@ -386,10 +387,7 @@
       <h2 class="section-title"><span class="idx">1</span>ผลงานตีพิมพ์แยกตามสาขา</h2>
       <div class="section-note">จำนวนผลงานเทียบสัดส่วนกับสาขาที่มีผลงานมากที่สุด และค่าเฉลี่ยต่ออาจารย์ 1 คน</div>
     </div>
-    <div class="grid-2">
-      <div class="panel"><div class="dept-list" id="deptList"></div></div>
-      <div class="panel"><canvas id="deptFacultyChart" height="230"></canvas></div>
-    </div>
+    <div class="panel"><div class="dept-list" id="deptList"></div></div>
   </div>
 </section>
 
@@ -452,8 +450,7 @@
           <tr>
             <th data-key="name">ชื่ออาจารย์</th>
             <th data-key="dept">สาขา</th>
-            <th data-key="pubs">จำนวนผลงาน</th>
-            <th data-key="complete">ข้อมูลครบถ้วน</th>
+            <th data-key="active5y">มีผลงานตีพิมพ์ในรอบ 5 ปีย้อนหลัง</th>
           </tr>
         </thead>
         <tbody id="facBody"></tbody>
@@ -635,9 +632,12 @@ function computeAll(){
   const pubCount = {}, metaCount = {};
   pubs.forEach(p=>{ const k=key(p); pubCount[k]=(pubCount[k]||0)+1; if(p.base) metaCount[k]=(metaCount[k]||0)+1; });
 
+  const active5ySet = new Set();
+  pubs.forEach(p=>{ if(p.expiry && daysToExpiry(p.expiry)>=0) active5ySet.add(key(p)); });
+
   const faculty_table = roster.map(r=>{
     const k = key(r);
-    return {id:r.id, name:r.name, dept:r.dept, pubs:pubCount[k]||0, complete:metaCount[k]||0, admin:isAdminId(r.id), edited:!!r.edited};
+    return {id:r.id, name:r.name, dept:r.dept, pubs:pubCount[k]||0, complete:metaCount[k]||0, active5y:active5ySet.has(k), admin:isAdminId(r.id), edited:!!r.edited};
   });
   const faculty_zero = faculty_table.filter(f=>f.pubs===0).length;
 
@@ -648,11 +648,15 @@ function computeAll(){
     return {dept:d, faculty:facN, pubs:dp.length, pubs_with_meta:metaN, pubs_incomplete:dp.length-metaN, avg_per_faculty: facN? Math.round((dp.length/facN)*100)/100 : 0};
   });
 
-  const level_counts = {};
-  meta_pubs.forEach(p=>{ const l = p.level || 'ไม่ระบุ'; level_counts[l]=(level_counts[l]||0)+1; });
-
   const yearly = {};
   meta_pubs.forEach(p=>{ if(p.year){ yearly[p.year]=(yearly[p.year]||0)+1; } });
+
+  const by_year_base = {};
+  pubs.forEach(p=>{
+    if(!p.year || (p.base!=='ระดับชาติ' && p.base!=='ระดับนานาชาติ')) return;
+    if(!by_year_base[p.year]) by_year_base[p.year] = {national:0, international:0};
+    if(p.base==='ระดับชาติ') by_year_base[p.year].national++; else by_year_base[p.year].international++;
+  });
 
   const withExpiry = pubs.filter(p=>p.expiry).map(p=>({...p, days:daysToExpiry(p.expiry)}));
   const expired = withExpiry.filter(p=>p.days<0).sort((a,b)=>a.days-b.days);
@@ -662,7 +666,7 @@ function computeAll(){
   const zero_pub_faculty = faculty_table.filter(f=>f.pubs===0);
 
   return {roster, pubs, total_faculty, total_pubs, pubs_with_meta, pubs_incomplete, faculty_zero,
-          by_dept, level_counts, yearly, expired, expiring_soon, incomplete, zero_pub_faculty, faculty_table};
+          by_dept, yearly, by_year_base, expired, expiring_soon, incomplete, zero_pub_faculty, faculty_table};
 }
 
 // ---------- render ----------
@@ -739,32 +743,22 @@ function renderAll(){
   // ---- Charts render last; a Chart.js/CDN failure here must never block anything above ----
   destroyCharts();
   if(typeof Chart === 'undefined'){
-    showChartFallback('deptFacultyChart', 'จำนวนอาจารย์/ผลงานต่อสาขา');
-    showChartFallback('levelChart', 'สัดส่วนระดับวารสาร');
+    showChartFallback('levelChart', 'จำนวนผลงานตีพิมพ์ ระดับชาติ/นานาชาติ ตามปี');
     showChartFallback('yearChart', 'แนวโน้มผลงานตีพิมพ์รายปี');
     return;
   }
 
   try{
-    charts.dept = new Chart(document.getElementById('deptFacultyChart'), {
-      type:'bar',
-      data:{labels:D.by_dept.map(d=>d.dept), datasets:[
-        {label:'อาจารย์ (คน)', data:D.by_dept.map(d=>d.faculty), backgroundColor:COLORS.purple, borderRadius:6},
-        {label:'ผลงาน (ชิ้น)', data:D.by_dept.map(d=>d.pubs), backgroundColor:COLORS.navy, borderRadius:6},
-      ]},
-      options:{responsive:true, plugins:{legend:{position:'bottom', labels:{font:{family:'Sarabun'}}}, title:{display:true,text:'อาจารย์ vs ผลงานตีพิมพ์ ต่อสาขา', font:{family:'Noto Serif Thai', size:14}}}, scales:{x:{ticks:{font:{family:'Sarabun', size:11}}}, y:{beginAtZero:true, ticks:{font:{family:'Sarabun'}}}}}
-    });
-  }catch(e){ console.error('dept chart failed', e); showChartFallback('deptFacultyChart', 'จำนวนอาจารย์/ผลงานต่อสาขา'); }
-
-  try{
-    const levelLabels = Object.keys(D.level_counts);
-    const levelVals = Object.values(D.level_counts);
+    const yearsBase = Object.keys(D.by_year_base).sort();
     charts.level = new Chart(document.getElementById('levelChart'), {
-      type:'doughnut',
-      data:{labels:levelLabels, datasets:[{data:levelVals, backgroundColor:[COLORS.navy,COLORS.teal,COLORS.gold,COLORS.coral,COLORS.purple,COLORS.muted], borderWidth:2, borderColor:'#fff'}]},
-      options:{plugins:{legend:{position:'bottom', labels:{font:{family:'Sarabun', size:12}}}, title:{display:true,text:'สัดส่วนระดับวารสาร', font:{family:'Noto Serif Thai', size:14}}}}
+      type:'bar',
+      data:{labels:yearsBase.map(y=>'พ.ศ. '+y), datasets:[
+        {label:'ระดับชาติ', data:yearsBase.map(y=>D.by_year_base[y].national), backgroundColor:COLORS.navy, borderRadius:6},
+        {label:'นานาชาติ', data:yearsBase.map(y=>D.by_year_base[y].international), backgroundColor:COLORS.teal, borderRadius:6},
+      ]},
+      options:{responsive:true, plugins:{legend:{position:'bottom', labels:{font:{family:'Sarabun'}}}, title:{display:true,text:'จำนวนผลงานตีพิมพ์ จำแนกตามปี พ.ศ.', font:{family:'Sarabun', size:14, weight:'bold'}}}, scales:{x:{stacked:false, ticks:{font:{family:'Sarabun', size:11}}}, y:{beginAtZero:true, stacked:false, ticks:{font:{family:'Sarabun'}}}}}
     });
-  }catch(e){ console.error('level chart failed', e); showChartFallback('levelChart', 'สัดส่วนระดับวารสาร'); }
+  }catch(e){ console.error('level chart failed', e); showChartFallback('levelChart', 'จำนวนผลงานตีพิมพ์ ระดับชาติ/นานาชาติ ตามปี'); }
 
   try{
     const years = Object.keys(D.yearly).sort();
@@ -777,7 +771,7 @@ function renderAll(){
 }
 
 // ---------- faculty table (public, section 6) ----------
-let sortKey='pubs', sortDir=-1, currentFacData=[];
+let sortKey='name', sortDir=1, currentFacData=[];
 function renderFacultyTable(facData){ currentFacData = facData; paintTable(); }
 const AVATAR_COLORS = ['c-navy','c-teal','c-gold','c-coral','c-purple'];
 function avatarHtml(name){
@@ -790,15 +784,19 @@ function paintTable(){
   const body = document.getElementById('facBody');
   const q = document.getElementById('facSearch').value.trim().toLowerCase();
   let rows = currentFacData.filter(r=>r.name.toLowerCase().includes(q) || r.dept.toLowerCase().includes(q));
-  rows.sort((a,b)=>{ if(typeof a[sortKey]==='number') return (a[sortKey]-b[sortKey])*sortDir; return a[sortKey].localeCompare(b[sortKey],'th')*sortDir; });
+  rows.sort((a,b)=>{
+    const av=a[sortKey], bv=b[sortKey];
+    if(typeof av==='boolean') return ((av===bv)?0:(av?-1:1))*sortDir;
+    if(typeof av==='number') return (av-bv)*sortDir;
+    return av.localeCompare(bv,'th')*sortDir;
+  });
   const pg = paginate(rows, facPage);
   facPage = pg.page;
-  body.innerHTML = pg.pageItems.length===0 ? '<tr><td colspan="4" class="empty-note">ไม่พบข้อมูล</td></tr>' : pg.pageItems.map(r=>`
+  body.innerHTML = pg.pageItems.length===0 ? '<tr><td colspan="3" class="empty-note">ไม่พบข้อมูล</td></tr>' : pg.pageItems.map(r=>`
     <tr>
       <td>${avatarHtml(r.name)}${r.name}${r.admin?'<span class="badge-admin">เพิ่มใหม่</span>':''}${r.edited?'<span class="badge-edited">แก้ไขแล้ว</span>':''}</td>
       <td>${r.dept}</td>
-      <td>${r.pubs}</td>
-      <td>${r.pubs>0 ? (r.complete===r.pubs ? '<span class="badge-complete">ครบ '+r.complete+'/'+r.pubs+'</span>' : '<span class="badge-incomplete">ครบ '+r.complete+'/'+r.pubs+'</span>') : '<span class="badge-incomplete">ยังไม่มีผลงาน</span>'}</td>
+      <td>${r.active5y ? '<span class="badge-complete">มี</span>' : '<span class="badge-incomplete">ไม่มี</span>'}</td>
     </tr>
   `).join('');
   renderPagination('facPagination', pg.page, pg.totalPages, (p)=>{ facPage=p; paintTable(); });
