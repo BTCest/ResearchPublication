@@ -33,12 +33,22 @@
   }
   .sidebar-brand{display:flex;align-items:center;gap:10px;padding:6px 8px 18px;border-bottom:1px solid var(--line);margin-bottom:14px;}
   .sidebar-brand .mark{width:34px;height:34px;border-radius:10px;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;flex-shrink:0;}
-  .sidebar-brand .txt{font-weight:800;font-size:13.5px;color:var(--ink);line-height:1.35;}
+  .sidebar-brand .txt{font-weight:800;font-size:13.5px;color:var(--ink);line-height:1.35;flex:1;}
   .sidebar-nav{display:flex;flex-direction:column;gap:2px;}
   .sidebar-nav a{display:flex;align-items:center;gap:11px;text-decoration:none;color:var(--muted);font-weight:600;font-size:13.5px;padding:10px 12px;border-radius:10px;transition:.15s;}
   .sidebar-nav a .ic{width:18px;text-align:center;flex-shrink:0;font-size:15px;}
   .sidebar-nav a:hover{background:#f2f5fb;color:var(--navy);}
   .sidebar-nav a.active{background:#eaf1ff;color:var(--navy);font-weight:700;}
+
+  .hamburger-btn{display:none;width:36px;height:36px;flex-shrink:0;border:1px solid var(--line);background:var(--panel);border-radius:10px;cursor:pointer;align-items:center;justify-content:center;font-size:18px;color:var(--navy);}
+
+  .back-to-top{
+    position:fixed;right:20px;bottom:24px;z-index:80;width:44px;height:44px;border-radius:50%;border:none;
+    background:var(--navy);color:#fff;font-size:18px;cursor:pointer;box-shadow:var(--shadow);
+    display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transform:translateY(8px);
+    transition:opacity .2s, transform .2s, visibility .2s;
+  }
+  .back-to-top.show{opacity:1;visibility:visible;transform:translateY(0);}
 
   .main-content{flex:1;min-width:0;padding:26px 30px 60px;}
   .topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px;}
@@ -203,8 +213,18 @@
   .foot-note{font-size:12.5px;color:var(--muted);}
 
   @media (max-width:960px){
-    aside.sidebar{position:static;height:auto;width:100%;border-right:none;border-bottom:1px solid var(--line);}
-    aside.sidebar .sidebar-nav{flex-direction:column;align-items:stretch;}
+    aside.sidebar{
+      position:sticky;top:0;z-index:70;height:auto;width:100%;border-right:none;
+      border-bottom:1px solid var(--line);overflow-y:visible;padding:10px 14px;
+    }
+    aside.sidebar .sidebar-brand{padding:2px 0;margin-bottom:0;border-bottom:none;}
+    .hamburger-btn{display:flex;}
+    aside.sidebar .sidebar-nav{
+      display:none;flex-direction:column;align-items:stretch;position:absolute;left:0;right:0;top:100%;
+      background:var(--panel);border-bottom:1px solid var(--line);box-shadow:var(--shadow);
+      padding:8px 14px 14px;max-height:calc(100vh - 60px);overflow-y:auto;
+    }
+    aside.sidebar.nav-open .sidebar-nav{display:flex;}
     aside.sidebar .sidebar-nav a{justify-content:flex-start;}
     .app-shell{flex-direction:column;align-items:stretch;}
     .main-content{padding:20px 18px 50px;min-width:0;}
@@ -236,7 +256,10 @@
 
 <div class="app-shell">
 <aside class="sidebar">
-  <div class="sidebar-brand"><span class="mark">RD</span><span class="txt">Research Publications<br>Dashboard</span></div>
+  <div class="sidebar-brand">
+    <span class="mark">RD</span><span class="txt">Research Publications<br>Dashboard</span>
+    <button type="button" class="hamburger-btn" id="navToggle" aria-label="เปิดเมนู" aria-expanded="false">&#9776;</button>
+  </div>
   <nav class="sidebar-nav">
     <a href="#overview" class="active"><span class="ic">&#9635;</span> ภาพรวม</a>
     <a href="#depts"><span class="ic">&#128202;</span> รายสาขา</a>
@@ -467,6 +490,8 @@
   </div>
 </footer>
 
+
+<button type="button" class="back-to-top" id="backToTop" aria-label="กลับขึ้นด้านบน">&#8593;</button>
 </div><!-- /.main-content -->
 </div><!-- /.app-shell -->
 
@@ -1114,11 +1139,38 @@ document.getElementById('exportJson').addEventListener('click', ()=>{
 });
 
 // ---------- init ----------
+const sidebarEl = document.querySelector('aside.sidebar');
+const navToggle = document.getElementById('navToggle');
+
+function closeMobileNav(){
+  sidebarEl.classList.remove('nav-open');
+  navToggle.setAttribute('aria-expanded', 'false');
+  navToggle.innerHTML = '&#9776;';
+}
+navToggle.addEventListener('click', ()=>{
+  const open = sidebarEl.classList.toggle('nav-open');
+  navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  navToggle.innerHTML = open ? '&#10005;' : '&#9776;';
+});
+document.addEventListener('click', (e)=>{
+  if(sidebarEl.classList.contains('nav-open') && !sidebarEl.contains(e.target)) closeMobileNav();
+});
+
 document.querySelectorAll('.sidebar-nav a').forEach(a=>{
   a.addEventListener('click', ()=>{
     document.querySelectorAll('.sidebar-nav a').forEach(x=>x.classList.remove('active'));
     a.classList.add('active');
+    closeMobileNav();
   });
+});
+
+// ---------- back to top ----------
+const backToTop = document.getElementById('backToTop');
+window.addEventListener('scroll', ()=>{
+  backToTop.classList.toggle('show', window.scrollY > 400);
+});
+backToTop.addEventListener('click', ()=>{
+  window.scrollTo({top:0, behavior:'smooth'});
 });
 
 (async function init(){
