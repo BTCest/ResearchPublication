@@ -9,7 +9,7 @@ binding = "ASSETS"
 # The spreadsheet ID from your Google Sheet's URL, e.g.
 # https://docs.google.com/spreadsheets/d/THIS_PART_IS_THE_ID/edit
 [vars]
-GOOGLE_SHEET_ID = "REPLACE_WITH_YOUR_GOOGLE_SHEET_ID"
+GOOGLE_SHEET_ID = "1uVu1nHwSgJYr0fr9yO_Bul7sFn2k1mBOVfoDmu4N4mo"
 
 # Set these as SECRETS (not here) in the Cloudflare dashboard:
 # Settings -> Variables and Secrets -> Add:
